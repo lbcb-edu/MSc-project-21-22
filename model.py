@@ -1,3 +1,5 @@
+import re
+import os
 import argparse
 import torch
 import torch.nn as nn
@@ -12,7 +14,10 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--learning_rate", default=0.01, type=float, help="learning rate for SGD (default: 0.01)", metavar="")
     parser.add_argument("--momentum", default=0.9, type=float, help="learning rate for SGD (default: 0.9)", metavar="")
-    parser.add_argument("--cuda", action="store_true", help="use CUDA for model training.")
+    parser.add_argument("--cuda", action="store_true", help="use CUDA for model training")
+    parser.add_argument('--overlaps', type=argparse.FileType('r'))
+    parser.add_argument("--save", type=str, help="save trained model")
+    parser.add_argument("--load", type=str, help="load trained model")
     
     return parser.parse_args()
 
@@ -39,22 +44,13 @@ class OverlapModel(nn.Module):
 
 def load_data(path):
     inputs, labels = [], []
-    p, n = 0,0
     with open(path, "r") as file:
         for line in file:
             s_l = line.split(" ")
             d = list(map(lambda x: float(x), s_l[:3]))
             l = float(s_l[3])
-            # if l == 0:
-            #     n += 1
-            # else:
-            #     p += 1
-            # if n >= 35903 and l == 0:
-            #     continue
             inputs.append(d)
             labels.append([l])
-    # print(sum(1 for item in labels if item == [1]))
-    # print(sum(1 for item in labels if item == [0]))
     inputs, labels = torch.tensor(inputs), torch.tensor(labels)
     c_min = inputs.min(0, keepdim=True)[0]
     inputs -= c_min
@@ -92,6 +88,15 @@ def evaluate(model, data_loader, device):
     acc = accuracy_score(labels, predictions)
     return acc
 
+def predict(model, inputs, device):
+    inputs = torch.tensor(inputs)
+    ids = inputs[:, :1]
+    inputs = inputs[:, 1:]
+    inputs = inputs.to(device)
+    predictions = model(inputs)
+    for i in range(len(ids)):
+        print(ids[i].item(), predictions[i].item())
+
 if __name__=="__main__":
 
     args = parse_arguments()
@@ -101,9 +106,31 @@ if __name__=="__main__":
     else:
         args.device = torch.device("cuda" if args.cuda else "cpu")
 
-    train_dl, test_dl = load_data("dataset.txt")
-    model = OverlapModel(3)
-    model.to(args.device)
-    train(model, train_dl, test_dl, args.learning_rate, args.momentum, args.device)
-    acc = evaluate(model, test_dl, args.device)
-    print(acc)
+    if (args.overlaps):
+        if (not args.load or not os.path.isfile(args.load)):
+            raise ValueError("Model path not valid")
+        inputs = []
+        model = torch.load(args.load)
+        model.eval()
+        with args.overlaps as f:
+            for line in f:
+                src, dst, flag, overlap = line.strip().split(',')
+                flag = int(flag)
+                if (flag):
+                    pattern = r':(\d+)'
+                    src_len = int(re.findall(pattern, src.split()[2])[0])
+                    overlap = overlap.split()
+                    (edge_id, prefix_len), (weight, similarity) = map(int, overlap[:2]), map(float, overlap[2:])
+                    inputs.append([edge_id, prefix_len, src_len - prefix_len, similarity])
+        predict(model, inputs, args.device)
+    else:
+        train_dl, test_dl = load_data("dataset.txt")
+        model = OverlapModel(3)
+        model.to(args.device)
+        train(model, train_dl, test_dl, args.learning_rate, args.momentum, args.device)
+        acc = evaluate(model, test_dl, args.device)
+        print(acc)
+        if (args.save):
+            if not os.path.exists("models"):
+                os.mkdir("models")
+            torch.save(model, "models/" + args.save)
