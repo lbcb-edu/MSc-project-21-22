@@ -14,7 +14,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, help="train dataset file")
     parser.add_argument("--learning_rate", default=0.001, type=float, help="learning rate for SGD (default: 0.01)", metavar="")
-    parser.add_argument("--momentum", default=0.9, type=float, help="learning rate for SGD (default: 0.9)", metavar="")
+    parser.add_argument("--momentum", default=0.9, type=float, help="momentum for SGD (default: 0.9)", metavar="")
     parser.add_argument("--cuda", action="store_true", help="use CUDA for model training")
     parser.add_argument('--overlaps', type=argparse.FileType('r'))
     parser.add_argument("--save", type=str, help="save trained model")
