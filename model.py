@@ -12,7 +12,8 @@ from OverlapLoader import OverlapLoader
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--learning_rate", default=0.01, type=float, help="learning rate for SGD (default: 0.01)", metavar="")
+    parser.add_argument("--dataset", type=str, help="train dataset file")
+    parser.add_argument("--learning_rate", default=0.001, type=float, help="learning rate for SGD (default: 0.01)", metavar="")
     parser.add_argument("--momentum", default=0.9, type=float, help="learning rate for SGD (default: 0.9)", metavar="")
     parser.add_argument("--cuda", action="store_true", help="use CUDA for model training")
     parser.add_argument('--overlaps', type=argparse.FileType('r'))
@@ -25,6 +26,7 @@ class OverlapModel(nn.Module):
     def __init__(self, n_inputs):
         super().__init__()
         self.classifier = nn.Sequential(
+            nn.BatchNorm1d(n_inputs),
             nn.Linear(n_inputs, 10),
             nn.ReLU(inplace=True),
             nn.Linear(10, 8),
@@ -47,14 +49,11 @@ def load_data(path):
     with open(path, "r") as file:
         for line in file:
             s_l = line.split(" ")
-            d = list(map(lambda x: float(x), s_l[:3]))
-            l = float(s_l[3])
+            d = list(map(lambda x: float(x), s_l[:4]))
+            l = float(s_l[4])
             inputs.append(d)
             labels.append([l])
     inputs, labels = torch.tensor(inputs), torch.tensor(labels)
-    c_min = inputs.min(0, keepdim=True)[0]
-    inputs -= c_min
-    inputs /= inputs.max(0, keepdim=True)[0] - c_min
     x_train, x_test, y_train, y_test = train_test_split(inputs, labels, test_size=0.4, shuffle=True)
     train_dl = DataLoader(OverlapLoader(x_train, y_train), batch_size=32, shuffle=True)
     test_dl = DataLoader(OverlapLoader(x_test, y_test), batch_size=1024, shuffle=False)
@@ -64,7 +63,7 @@ def train(model, train_data_loader, test_data_loader, learning_rate, momentum, d
     criterion = nn.BCELoss()
     optimizer = SGD(model.parameters(), lr=learning_rate, momentum=momentum)
 
-    for epoch in range(100):
+    for epoch in range(1, 201):
         for i, (inputs, labels) in enumerate(train_data_loader):
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
@@ -73,8 +72,11 @@ def train(model, train_data_loader, test_data_loader, learning_rate, momentum, d
             loss.backward()
             optimizer.step()
         if (epoch % 10 == 0):
-            acc = evaluate(model, test_data_loader, device)
-            print("Epoch = " + str(epoch) + ", acc = " + str(acc))
+            model.eval()
+            with torch.no_grad():
+                acc = evaluate(model, test_data_loader, device)
+                print("Epoch = " + str(epoch) + ", acc = " + str(acc))
+            model.train()
 
 
 def evaluate(model, data_loader, device):
@@ -120,12 +122,13 @@ if __name__=="__main__":
                     pattern = r':(\d+)'
                     src_len = int(re.findall(pattern, src.split()[2])[0])
                     overlap = overlap.split()
-                    (edge_id, prefix_len), (weight, similarity) = map(int, overlap[:2]), map(float, overlap[2:])
-                    inputs.append([edge_id, prefix_len, src_len - prefix_len, similarity])
+                    (edge_id, prefix_len), (weight, similarity) = map(int, overlap[:2]), map(float, overlap[2:4])
+                    matches = int(overlap[4])
+                    inputs.append([edge_id, prefix_len, src_len - prefix_len, similarity, matches])
         predict(model, inputs, args.device)
     else:
-        train_dl, test_dl = load_data("dataset.txt")
-        model = OverlapModel(3)
+        train_dl, test_dl = load_data(args.dataset)
+        model = OverlapModel(4)
         model.to(args.device)
         train(model, train_dl, test_dl, args.learning_rate, args.momentum, args.device)
         acc = evaluate(model, test_dl, args.device)
