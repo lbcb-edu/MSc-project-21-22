@@ -42,18 +42,18 @@ optional arguments:
 ### Training
 
 ```
-python model.py --dataset train_dataset.txt
+python model.py --dataset example_data/train.txt
 ```
 
 Train dataset has 5 columns as follows:
 ```
-<prefix length> <overlap length> <overlap similarity> <number of matching bases> <label>
+<prefix length> <overlap length> <overlap similarity> <number of matching bases> <CIGAR string> <label>
 ```
 
 This data can be obtained with raven fork here: https://github.com/lukapozega/raven and then processed.
 
 ### Test
 ```
-python model.py --overlaps example_data/test.csv --load models/4-10-8.pt
+python model.py --overlaps example_data/test.csv --load models/15-10-8.pt
 ```
-Test dataset has format of the csv file produced by the raven with addition of number of matching bases at the end. File can be generated with this raven fork https://github.com/lukapozega/raven.
+Test dataset has format of the csv file produced by the raven with addition of number of matching bases and CIGAR string at the end. File can be generated with this raven fork https://github.com/lukapozega/raven.
