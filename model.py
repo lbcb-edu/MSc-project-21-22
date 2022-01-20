@@ -13,7 +13,7 @@ from OverlapLoader import OverlapLoader
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, help="train dataset file")
-    parser.add_argument("--learning_rate", default=0.001, type=float, help="learning rate for SGD (default: 0.01)", metavar="")
+    parser.add_argument("--learning_rate", default=0.01, type=float, help="learning rate for SGD (default: 0.01)", metavar="")
     parser.add_argument("--momentum", default=0.9, type=float, help="momentum for SGD (default: 0.9)", metavar="")
     parser.add_argument("--cuda", action="store_true", help="use CUDA for model training")
     parser.add_argument('--overlaps', type=argparse.FileType('r'))
@@ -27,7 +27,9 @@ class OverlapModel(nn.Module):
         super().__init__()
         self.classifier = nn.Sequential(
             nn.BatchNorm1d(n_inputs),
-            nn.Linear(n_inputs, 10),
+            nn.Linear(n_inputs, 15),
+            nn.ReLU(inplace=True),
+            nn.Linear(15, 10),
             nn.ReLU(inplace=True),
             nn.Linear(10, 8),
             nn.ReLU(inplace=True),
@@ -44,13 +46,32 @@ class OverlapModel(nn.Module):
         probs = self.classifier(X)
         return probs
 
+def parse_cigar(cigar):
+    M, I, D = 0,0,0
+    b = ""
+    for i in cigar:
+        if i.isdigit():
+            b += i
+        else:
+            x = int(b)
+            if i == "M":
+                M += x
+            elif i == "I":
+                I += x
+            elif i == "D":
+                D += x
+            b = ""
+    return M, I, D
+
 def load_data(path):
     inputs, labels = [], []
     with open(path, "r") as file:
         for line in file:
             s_l = line.split(" ")
             d = list(map(lambda x: float(x), s_l[:4]))
-            l = float(s_l[4])
+            l = float(s_l[5])
+            M, I, D = parse_cigar(s_l[4])
+            d += [M,I,D]
             inputs.append(d)
             labels.append([l])
     inputs, labels = torch.tensor(inputs), torch.tensor(labels)
@@ -97,7 +118,7 @@ def predict(model, inputs, device):
     inputs = inputs.to(device)
     predictions = model(inputs)
     for i in range(len(ids)):
-        print(ids[i].item(), predictions[i].item())
+        print(int(ids[i].item()), predictions[i].item())
 
 if __name__=="__main__":
 
@@ -124,11 +145,13 @@ if __name__=="__main__":
                     overlap = overlap.split()
                     (edge_id, prefix_len), (weight, similarity) = map(int, overlap[:2]), map(float, overlap[2:4])
                     matches = int(overlap[4])
-                    inputs.append([edge_id, prefix_len, src_len - prefix_len, similarity, matches])
+                    cigar = overlap[5]
+                    M, I, D = parse_cigar(cigar)
+                    inputs.append([edge_id, prefix_len, src_len - prefix_len, similarity, matches, M, I, D])
         predict(model, inputs, args.device)
     else:
         train_dl, test_dl = load_data(args.dataset)
-        model = OverlapModel(4)
+        model = OverlapModel(7)
         model.to(args.device)
         train(model, train_dl, test_dl, args.learning_rate, args.momentum, args.device)
         acc = evaluate(model, test_dl, args.device)
